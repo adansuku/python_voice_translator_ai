@@ -1,6 +1,9 @@
 import gradio as gr
 import whisper as wh
 from translate import Translator
+from dotenv import dotenv_values
+
+dotenv_values(".env")
 
 def tanslator(audio_file):
     try:

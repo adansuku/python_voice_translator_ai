@@ -1,4 +1,4 @@
 gradio
 openai-whisper
 translate
-dotenv
+python-dotenv

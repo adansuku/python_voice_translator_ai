@@ -1,6 +1,6 @@
 import gradio as gr
 import whisper as wh
-from tanslate import Translator
+from translate import Translator
 
 def tanslator(audio_file):
     try:
@@ -8,10 +8,12 @@ def tanslator(audio_file):
         result = model.transcribe(audio_file)
         transciption = result['text']
     except Exception as e:
-        gr.error(
+        raise gr.error(
             f"Error: {e}"
         )
-    transciption
+    transciption = Translator(to_lang="en").translate(transciption)
+    print(transciption)
+    return transciption
 
 
 web = gr.Interface(

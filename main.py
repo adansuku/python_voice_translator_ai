@@ -1,75 +1,96 @@
 import gradio as gr
-import whisper as wh
+import whisper
 from translate import Translator
 from dotenv import dotenv_values
 from elevenlabs.client import ElevenLabs
 from elevenlabs import VoiceSettings
 
+# Load configuration from .env file
+config = dotenv_values(".env")
+ELEVENLABS_API_KEY = config["ELEVENLABS_API_KEY"]
 
-dotenv_values(".env")
+# Constants
+MODEL_NAME = "base"
+ELEVENLABS_VOICE_ID = "pNInz6obpgDQGcFmaJgB"  # Adam
+ELEVENLABS_MODEL_ID = "eleven_turbo_v2"
+OUTPUT_FORMAT = "mp3_22050_32"
+VOICE_SETTINGS = VoiceSettings(
+    stability=0.0,
+    similarity_boost=0.0,
+    style=0.0,
+    use_speaker_boost=True,
+)
 
-ELEVEN_API_KEY = dotenv_values(".env")["ELEVEN_API_KEY"]
+def load_whisper_model():
+    """Load the Whisper model."""
+    return whisper.load_model(MODEL_NAME)
 
-def tanslator(audio_file):
+def transcribe_audio(model, audio_file):
+    """Transcribe audio using the Whisper model."""
     try:
-        model = wh.load_model("base")
-        result = model.transcribe(audio_file, fp16=False)
-        transcription = result['text']
+        result = model.transcribe(audio_file, language="Spanish", fp16=False)
+        transcription = result["text"]
+        return transcription
     except Exception as e:
-        raise gr.Error(
-            f"Error something went wrong creating the audio file: {e}"
-        )
-    
-    print(f"transcription: {transcription}")
-    
+        raise gr.Error(f"An error occurred while transcribing the text: {str(e)}")
+
+def translate_text(transcription):
+    """Translate the transcription to multiple languages."""
+    translations = {}
     try:
-        en_transciption = Translator(to_lang="en").translate(transcription)
+        translations['en'] = Translator(from_lang="es", to_lang="en").translate(transcription)
+        translations['it'] = Translator(from_lang="es", to_lang="it").translate(transcription)
+        translations['fr'] = Translator(from_lang="es", to_lang="fr").translate(transcription)
+        translations['ja'] = Translator(from_lang="es", to_lang="ja").translate(transcription)
+        return translations
     except Exception as e:
-        raise gr.Error(
-            f"Error, something failed on translation: {e}"
-        )
-        
-    print(f"translation: {en_transciption}")
-        
+        raise gr.Error(f"An error occurred while translating the text: {str(e)}")
+
+def text_to_speech(client, text, language):
+    """Convert text to speech using ElevenLabs API."""
     try:
-        client = ElevenLabs(api_key=ELEVEN_API_KEY)
-        print(ELEVEN_API_KEY)
-        
         response = client.text_to_speech.convert(
-                voice_id="Xb7hH8MSUJpSbSDYk0k2",  # A sweet girl :)
-                optimize_streaming_latency="0",
-                output_format="mp3_22050_32",
-                text=en_transciption,
-                model_id="eleven_turbo_v2",  
-                voice_settings=VoiceSettings(
-                    stability=0.0,
-                    similarity_boost=1.0,
-                    style=0.0,
-                    use_speaker_boost=True,
-                )
-            )
-
-        save_file_path = "audios/en.mp3"
-        with open(save_file_path, "wb") as file:
+            voice_id=ELEVENLABS_VOICE_ID,
+            optimize_streaming_latency="0",
+            output_format=OUTPUT_FORMAT,
+            text=text,
+            model_id=ELEVENLABS_MODEL_ID,
+            voice_settings=VOICE_SETTINGS,
+        )
+        
+        save_file_path = f"{language}.mp3"
+        with open(save_file_path, "wb") as f:
             for chunk in response:
                 if chunk:
-                    file.write(chunk)
+                    f.write(chunk)
+        return save_file_path
     except Exception as e:
-        raise gr.Error(
-            f"Error, something failed when the audio was created: {e}"
-        )
-        
-    return save_file_path
+        raise gr.Error(f"An error occurred while creating the audio: {str(e)}")
 
+def handle_translation(audio_file):
+    """Handle the overall translation process."""
+    model = load_whisper_model()
+    transcription = transcribe_audio(model, audio_file)
+    print(f"Original text: {transcription}")
+    
+    translations = translate_text(transcription)
+    client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+    
+    audio_files = {lang: text_to_speech(client, text, lang) for lang, text in translations.items()}
+    return tuple(audio_files.values())
+
+# Gradio Interface
 web = gr.Interface(
-    fn=tanslator, 
-    inputs=gr.Audio(
-        sources=["microphone"], 
-        type="filepath"
-        ), 
-    outputs=[gr.Audio(label="Translated Audio")],
-    title= "Audio Transcription",
-    description= "Transcribe audio from your microphone"
-    )
+    fn=handle_translation,
+    inputs=gr.Audio(sources=["microphone"], type="filepath", label="Spanish"),
+    outputs=[
+        gr.Audio(label="English"),
+        gr.Audio(label="Italian"),
+        gr.Audio(label="French"),
+        gr.Audio(label="Japanese")
+    ],
+    title="Voice Translator",
+    description="AI-powered voice translator to multiple languages"
+)
 
-web.launch(share=True)
+web.launch()
